@@ -45,9 +45,11 @@ else
 
                 bool isEditing = (!canExpand && editingItemId == itemId);
 
+                var noBoxes = group.Boxes.Count == 1 && group.Boxes.FirstOrDefault() == string.Empty;
+
                 <tr class="@(canExpand ? "table-group-row clickable" : "") @(expandedGroups.Contains(group.Name) ? "table-active border-bottom-row" : "")"
-                    @onclick="() => { if (canExpand) ToggleGroup(group.Name); else StartEditing(group); }"
-                    style=@($"cursor:{(canExpand ? "pointer" : "default")}")>
+                @onclick="() => { if (canExpand) ToggleGroup(group.Name); else StartEditing(group); }"
+                style=@($"cursor:{(canExpand ? "pointer" : "default")}")>
                     <td>
                         @if (isEditing)
                         {
@@ -63,17 +65,19 @@ else
                         }
                     </td>
                     <td>
-                        @if (isEditing && group.Boxes.Count == 0)
+                        @if (isEditing && noBoxes)
                         {
                             <InputNumber class="form-control" @bind-Value="editingItem.Quantity" @onblur="SaveEditingItem" />
                         }
                         else
                         {
                             @group.TotalQuantity
+
+                            Console.WriteLine($"Boxes: {group.Boxes.Count}");
                         }
                     </td>
                     <td>
-                        @if (isEditing)
+                        @if (isEditing && group.TotalQuantity == 1)
                         {
                             <InputText class="form-control" @bind-Value="boxInput" @onblur="SaveEditingItem" />
                         }
@@ -99,22 +103,24 @@ else
                         }
                     </td>
                     <td>
-                        @if (isEditing)
-                        {
-                            <InputText class="form-control" @bind-Value="storeDateInput" @onblur="SaveEditingItem" />
-                        }
-                        else
-                        {
-                            @group.EarliestStoreDate.ToString("dd.MM.yy H:mm")
-                        }
+                       @group.EarliestStoreDate.ToString("dd.MM.yy H:mm")                        
                     </td>
                     <td>
                         @if (isEditing && !canExpand)
                         {
                             <button class="btn btn-danger btn-sm"
-                                    @onclick:stopPropagation="true"
-                                    @onclick="() => ShowConfirm(GetDeleteMessage(group.Name), async () => await DeleteSingle(itemId))">
+                            @onclick:stopPropagation="true"
+                            @onclick="() => ShowConfirm(GetDeleteMessage(group.Name), async () => await DeleteSingle(itemId))">
                                 @(group.TotalQuantity > 1 ? "Delete one" : "Delete")
+                            </button>
+                        }
+
+                        @if (isEditing)
+                        {
+                            <button class="btn btn-success btn-sm"
+                            @onclick:stopPropagation="true"
+                            @onclick="SaveEditingItem">
+                                Save
                             </button>
                         }
                     </td>
@@ -133,8 +139,8 @@ else
                             <td>@item.StoreDate.ToString("dd.MM.yy H:mm")</td>
                             <td>
                                 <button class="btn btn-danger btn-sm"
-                                        @onclick:stopPropagation="true"
-                                        @onclick="() => ShowConfirm(GetDeleteMessage(item.Name), async () => await DeleteSingle(item.Id))">
+                                @onclick:stopPropagation="true"
+                                @onclick="() => ShowConfirm(GetDeleteMessage(item.Name), async () => await DeleteSingle(item.Id))">
                                     @(item.Quantity > 1 ? "Delete one" : "Delete")
                                 </button>
                             </td>
@@ -305,29 +311,41 @@ else
 
     private async Task SaveEditingItem()
     {
-        if (editingItem == null) return;
+        // Exit edit mode even if editingItem is null
+        Guid? previousEditingId = editingItemId;
+        FreezerItem? itemToSave = editingItem;
 
-        if (int.TryParse(boxInput, out int box))
-            editingItem.BoxId = box;
-        else
-            editingItem.BoxId = null;
-
-        // Parse the store date.
-        if (DateTime.TryParseExact(storeDateInput, "d.M.yyyy HH:mm", null, System.Globalization.DateTimeStyles.None, out var dt))
-            editingItem.StoreDate = dt;
-
-        await TableService.UpdateFreezerItemAsync(editingItem, Configuration, Logger);
-        freezerItems = await TableService.GetFreezerItemsAsync(Configuration, Logger);
-        GroupItems();
+        // Reset edit state immediately to ensure UI updates
         editingItemId = null;
         editingItem = null;
 
-        // Blur the active element to force focus out
-        await JSRuntime.InvokeVoidAsync("document.activeElement.blur");
+        // If we don't have an item to save, just exit edit mode
+        if (itemToSave == null)
+        {
+            StateHasChanged();
+            return;
+        }
 
+        // Parse inputs and save changes
+        if (int.TryParse(boxInput, out int box))
+            itemToSave.BoxId = box;
+        else
+            itemToSave.BoxId = null;
+
+        // Parse the store date
+        if (DateTime.TryParseExact(storeDateInput, "d.M.yyyy HH:mm", null, System.Globalization.DateTimeStyles.None, out var dt))
+            itemToSave.StoreDate = dt;
+
+        // Save to database
+        await TableService.UpdateFreezerItemAsync(itemToSave, Configuration, Logger);
+
+        // Refresh data
+        freezerItems = await TableService.GetFreezerItemsAsync(Configuration, Logger);
+        GroupItems();
+
+        await JSRuntime.InvokeVoidAsync("document.activeElement.blur");
         StateHasChanged();
     }
-
 
 
     private class GroupedItem

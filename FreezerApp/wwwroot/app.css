@@ -73,10 +73,13 @@ h1:focus {
 
 .border-bottom-row {
     background: #eee;
-    /*    border-bottom: 1px solid #ccc;*/
 }
 
 .rounded-pill {
     font-size: 14px !important;
     margin-right: 2px;
 }
+
+.btn {
+    margin-left: 6px;
+} 
