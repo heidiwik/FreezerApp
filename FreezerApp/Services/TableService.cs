@@ -6,7 +6,6 @@ using System.Text;
 using System.Threading.Tasks;
 using Azure.Data.Tables;
 using FreezerApp.Models;
-using Azure.Core;
 using Azure.Identity;
 using System.Diagnostics;
 
@@ -57,7 +56,7 @@ namespace FreezerApp.Services
                     {
                         Id = Guid.Parse(entity.RowKey),
                         BoxId = entity.BoxId,
-                        Name = entity.Name,
+                        Name = entity.Name.Trim(),
                         Quantity = entity.Quantity,
                         Location = entity.Location,
                         StoreDate = entity.StoreDate
@@ -100,17 +99,20 @@ namespace FreezerApp.Services
             {
                 throw new ArgumentNullException(nameof(item));
             }
-            var entity = new FreezerItemEntity
-            {
-                PartitionKey = "items",
-                RowKey = item.Id.ToString(),
-                BoxId = item.BoxId,
-                Name = item.Name,
-                Quantity = item.Quantity,
-                Location = item.Location,
-                StoreDate = item.StoreDate
-            };
-            await tableClient.UpdateEntityAsync(entity, entity.ETag);
+
+            // Retrieve the existing entity to get its valid ETag
+            var existingEntityResponse = await tableClient.GetEntityAsync<FreezerItemEntity>("items", item.Id.ToString());
+            var existingEntity = existingEntityResponse.Value;
+
+            // Update the properties
+            existingEntity.BoxId = item.BoxId;
+            existingEntity.Name = item.Name;
+            existingEntity.Quantity = item.Quantity;
+            existingEntity.Location = item.Location;
+            existingEntity.StoreDate = item.StoreDate;
+
+            // Use the ETag from the retrieved entity
+            await tableClient.UpdateEntityAsync(existingEntity, existingEntity.ETag);
         }
 
         public static async Task DeleteFreezerItemAsync(Guid id, IConfiguration config, ILogger log)

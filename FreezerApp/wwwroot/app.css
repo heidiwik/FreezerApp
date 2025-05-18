@@ -75,3 +75,8 @@ h1:focus {
     background: #eee;
     /*    border-bottom: 1px solid #ccc;*/
 }
+
+.rounded-pill {
+    font-size: 14px !important;
+    margin-right: 2px;
+}

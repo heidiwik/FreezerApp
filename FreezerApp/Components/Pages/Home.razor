@@ -26,40 +26,53 @@ else
         <thead>
             <tr>
                 <th scope="col">Name</th>
-                <th>Box</th>
-                <th>Locations</th>
-                <th>Stored</th>
                 <th>Quantity</th>
+                <th>Box</th>
+                <th>Compartment</th>
+                <th>Stored</th>
                 <th></th>
             </tr>
         </thead>
         <tbody>
             @foreach (var group in groupedItems)
             {
-                <tr class="@(group.TotalQuantity > 1 ? "table-group-row clickable" : "") @(expandedGroups.Contains(group.Name) ? "table-active border-bottom-row" : "") "
-                    @onclick="() => { if (group.TotalQuantity > 1) ToggleGroup(group.Name); }"
-                    style="cursor:@(group.TotalQuantity > 1 ? "pointer" : "default")">
+                bool canExpand = group.Ids.Count > 1 && group.Boxes.Any(x => !string.IsNullOrWhiteSpace(x));
+                <tr class="@(canExpand ? "table-group-row clickable" : "") @(expandedGroups.Contains(group.Name) ? "table-active border-bottom-row" : "")"
+                    @onclick="() => { if (canExpand) ToggleGroup(group.Name); }"
+                    style=@($"cursor:{(canExpand ? "pointer" : "default")}")>
                     <td>
                         <b>@group.Name </b>
-                        @if (group.TotalQuantity > 1)
+                        @if (canExpand)
                         {
-                            <span>
-                                <i class="bi @(expandedGroups.Contains(group.Name) ? "bi-caret-up-fill" : "bi-caret-down-fill") bi-icon"></i>
-                            </span>
+                            <span> <i class="bi @(expandedGroups.Contains(group.Name) ? "bi-caret-up-fill" : "bi-caret-down-fill") bi-icon"></i></span>
                         }
                     </td>
-                    <td>@string.Join(", ", group.Boxes)</td>
-                    <td>@string.Join(", ", group.Locations)</td>
-                    <td>@group.EarliestStoreDate.ToString("dd.MM.yy H:mm")</td>
                     <td>@group.TotalQuantity</td>
                     <td>
-                        <button class="btn btn-danger btn-sm"
-                                @onclick:stopPropagation="true"
-                                @onclick="() => ShowConfirm(GetDeleteMessage(group), () => DeleteAll(group.Name))">
-                            @(group.TotalQuantity > 1 ? "Delete All" : "Delete")
-                        </button>
+                        @foreach (var box in group.Boxes)
+                        {
+                            <span class="badge rounded-pill bg-primary">@box</span>
+                        }
+                    </td>
+                    <td>
+                        @foreach (var compartment in group.Locations)
+                        {
+                            <span class="badge bg-success rounded-pill">@compartment</span>
+                        }
+                    </td>
+                    <td>@group.EarliestStoreDate.ToString("dd.MM.yy H:mm")</td>
+                    <td>
+                        @if (!canExpand)
+                        {
+                            <button class="btn btn-danger btn-sm"
+                                    @onclick:stopPropagation="true"
+                                    @onclick="() => ShowConfirm(GetDeleteMessage(group.Name), async () => await DeleteSingle(group.Ids.FirstOrDefault()))">
+                                @(group.TotalQuantity > 1 ? "Delete one" : "Delete")
+                            </button>
+                        }
                     </td>
                 </tr>
+
                 @if (expandedGroups.Contains(group.Name))
                 {
                     var items = freezerItems!.Where(x => x.Name == group.Name).OrderBy(x => x.StoreDate).ToList();
@@ -67,13 +80,15 @@ else
                     {
                         <tr class="table-active">
                             <td colspan="1"></td>
-                            <td>@(item.BoxId?.ToString() ?? "-")</td>
-                            <td>@(item.Location ?? "-")</td>
+                            <td>@(item.Quantity > 1 ? item.Quantity : "")</td>
+                            <td>@(item.BoxId?.ToString() ?? "")</td>
+                            <td>@(item.Location ?? "")</td>
                             <td>@item.StoreDate.ToString("dd.MM.yy H:mm")</td>
-                            <td colspan="1"></td>
                             <td>
-                                <button class="btn btn-danger btn-sm" @onclick="async (e) => await DeleteSingle(item.Id)">
-                                    Delete
+                                <button class="btn btn-danger btn-sm"
+                                        @onclick:stopPropagation="true"
+                                        @onclick="() => ShowConfirm(GetDeleteMessage(item.Name), async () => await DeleteSingle(item.Id))">
+                                    @(item.Quantity > 1 ? "Delete one" : "Delete")
                                 </button>
                             </td>
                         </tr>
@@ -137,14 +152,20 @@ else
     protected override async Task OnInitializedAsync()
     {
         freezerItems = await TableService.GetFreezerItemsAsync(Configuration, Logger);
+
+        if (freezerItems == null)
+            return;
+
         GroupItems();
     }
 
-    private string GetDeleteMessage(GroupedItem group)
+    private string GetDeleteMessage(string name)
     {
-        return group.TotalQuantity > 1
-            ? $"Delete all items named '{group.Name}'?"
-            : $"Delete '{group.Name}'?";
+        return $"Delete {name}?";
+
+        // return group.TotalQuantity > 1
+        //     ? $"Delete first item of '{group.Name}'?"
+        //     : $"Delete '{group.Name}'?";
     }
 
     private void GroupItems()
@@ -155,8 +176,8 @@ else
                 {
                     Name = g.Key,
                     TotalQuantity = g.Sum(x => x.Quantity),
-                    Boxes = g.Select(x => x.BoxId?.ToString() ?? "-").Distinct().ToList(),
-                    Locations = g.Select(x => x.Location ?? "-").Distinct().ToList(),
+                    Boxes = g.Select(x => x.BoxId?.ToString() ?? "").Distinct().ToList(),
+                    Locations = g.Select(x => x.Location ?? "").Distinct().ToList(),
                     EarliestStoreDate = g.Min(x => x.StoreDate),
                     Ids = g.Select(x => x.Id).ToList()
                 })
@@ -164,26 +185,60 @@ else
             .ToList();
     }
 
-    private async Task DeleteAll(string name)
+    private async Task DeleteFirst(string name)
     {
         if (freezerItems == null) return;
-        var itemsToDelete = freezerItems.Where(x => x.Name == name).ToList();
-        foreach (var item in itemsToDelete)
+        var firstItem = freezerItems.Where(x => x.Name == name).OrderBy(x => x.StoreDate).FirstOrDefault();
+        if (firstItem != null)
         {
-            await TableService.DeleteFreezerItemAsync(item.Id, Configuration, Logger);
+            await TableService.DeleteFreezerItemAsync(firstItem.Id, Configuration, Logger);
+            freezerItems = await TableService.GetFreezerItemsAsync(Configuration, Logger);
+            GroupItems();
+            StateHasChanged();
         }
-        freezerItems = await TableService.GetFreezerItemsAsync(Configuration, Logger);
-        GroupItems();
-        StateHasChanged();
     }
 
+    // if the item has quantity > 1, decrease the quantity by 1
+    // else item is single item, delete it
     private async Task DeleteSingle(Guid id)
     {
-        await TableService.DeleteFreezerItemAsync(id, Configuration, Logger);
-        freezerItems = await TableService.GetFreezerItemsAsync(Configuration, Logger);
-        GroupItems();
-        StateHasChanged();
+        var item = freezerItems?.FirstOrDefault(x => x.Id == id);
+
+        if (item != null)
+        {
+            var deleteSingleRow = item.Quantity == 1;
+
+            if (deleteSingleRow)
+            {
+                await DeleteFirst(item.Name);
+            }
+            else
+            {
+                item.Quantity--;
+
+                await TableService.UpdateFreezerItemAsync(item, Configuration, Logger);
+
+                freezerItems = await TableService.GetFreezerItemsAsync(Configuration, Logger);
+                GroupItems();
+                StateHasChanged();
+            }
+        }
     }
+
+    // unused for now
+    // private async Task DeleteAll(string name)
+    // {
+    //     if (freezerItems == null) return;
+    //     var itemsToDelete = freezerItems.Where(x => x.Name == name).ToList();
+    //     foreach (var item in itemsToDelete)
+    //     {
+    //         await TableService.DeleteFreezerItemAsync(item.Id, Configuration, Logger);
+    //     }
+    //     freezerItems = await TableService.GetFreezerItemsAsync(Configuration, Logger);
+    //     GroupItems();
+    //     StateHasChanged();
+    // }
+
 
     private class GroupedItem
     {
