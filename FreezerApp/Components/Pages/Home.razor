@@ -22,31 +22,41 @@ else if (groupedItems.Count == 0)
 }
 else
 {
-    <table class="table">
+    <table class="table table-hover">
         <thead>
             <tr>
-                <th>Name</th>
-                <th>Quantity</th>
-                <th>Boxes</th>
+                <th scope="col">Name</th>
+                <th>Box</th>
                 <th>Locations</th>
-                <th>Stored (Earliest)</th>
-                <th>Delete All</th>
+                <th>Stored</th>
+                <th>Quantity</th>
+                <th></th>
             </tr>
         </thead>
         <tbody>
             @foreach (var group in groupedItems)
             {
-                <tr class="@(group.TotalQuantity > 1 ? "table-group-row clickable" : "")"
+                <tr class="@(group.TotalQuantity > 1 ? "table-group-row clickable" : "") @(expandedGroups.Contains(group.Name) ? "table-active border-bottom-row" : "") "
                     @onclick="() => { if (group.TotalQuantity > 1) ToggleGroup(group.Name); }"
                     style="cursor:@(group.TotalQuantity > 1 ? "pointer" : "default")">
-                    <td><b>@group.Name</b></td>
-                    <td>@group.TotalQuantity</td>
+                    <td>
+                        <b>@group.Name </b>
+                        @if (group.TotalQuantity > 1)
+                        {
+                            <span>
+                                <i class="bi @(expandedGroups.Contains(group.Name) ? "bi-caret-up-fill" : "bi-caret-down-fill") bi-icon"></i>
+                            </span>
+                        }
+                    </td>
                     <td>@string.Join(", ", group.Boxes)</td>
                     <td>@string.Join(", ", group.Locations)</td>
                     <td>@group.EarliestStoreDate.ToString("dd.MM.yy H:mm")</td>
+                    <td>@group.TotalQuantity</td>
                     <td>
-                        <button class="btn btn-danger btn-sm" @onclick:stopPropagation="true" @onclick="() => DeleteAll(group.Name)">
-                            Delete All
+                        <button class="btn btn-danger btn-sm"
+                                @onclick:stopPropagation="true"
+                                @onclick="() => ShowConfirm(GetDeleteMessage(group), () => DeleteAll(group.Name))">
+                            @(group.TotalQuantity > 1 ? "Delete All" : "Delete")
                         </button>
                     </td>
                 </tr>
@@ -56,22 +66,42 @@ else
                     @foreach (var item in items)
                     {
                         <tr class="table-active">
-                            <td colspan="2"></td>
+                            <td colspan="1"></td>
                             <td>@(item.BoxId?.ToString() ?? "-")</td>
                             <td>@(item.Location ?? "-")</td>
                             <td>@item.StoreDate.ToString("dd.MM.yy H:mm")</td>
+                            <td colspan="1"></td>
                             <td>
-                                <button class="btn btn-danger btn-sm"
-                                        @onclick="async (e) => await DeleteSingle(item.Id)">
+                                <button class="btn btn-danger btn-sm" @onclick="async (e) => await DeleteSingle(item.Id)">
                                     Delete
                                 </button>
                             </td>
                         </tr>
                     }
-                   }
+                }
             }
         </tbody>
     </table>
+}
+
+@if (showConfirm){
+    <div class="modal-backdrop fade show"></div>
+    <div class="modal d-block" tabindex="-1">
+        <div class="modal-dialog">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title">Confirm Delete</h5>
+                </div>
+                <div class="modal-body">
+                    <p>@confirmMessage</p>
+                </div>
+                <div class="modal-footer">
+                    <button class="btn btn-secondary" @onclick="() => showConfirm = false">Cancel</button>
+                    <button class="btn btn-danger" @onclick="OnConfirm">Delete</button>
+                </div>
+            </div>
+        </div>
+    </div>
 }
 
 @code {
@@ -86,10 +116,35 @@ else
             expandedGroups.Remove(groupName);
     }
 
+    private bool showConfirm = false;
+    private string? confirmMessage;
+    private Func<Task>? confirmAction;
+
+    private void ShowConfirm(string message, Func<Task> action)
+    {
+        confirmMessage = message;
+        confirmAction = action;
+        showConfirm = true;
+    }
+
+    private async Task OnConfirm()
+    {
+        showConfirm = false;
+        if (confirmAction != null)
+            await confirmAction.Invoke();
+    }
+
     protected override async Task OnInitializedAsync()
     {
         freezerItems = await TableService.GetFreezerItemsAsync(Configuration, Logger);
         GroupItems();
+    }
+
+    private string GetDeleteMessage(GroupedItem group)
+    {
+        return group.TotalQuantity > 1
+            ? $"Delete all items named '{group.Name}'?"
+            : $"Delete '{group.Name}'?";
     }
 
     private void GroupItems()

@@ -39,7 +39,7 @@
         </InputSelect>
     </div>
     <div class="mb-3">
-        <label>Store Date:</label>
+        <label>Store date:</label>
         <input class="form-control"
                @bind="storeDateString"
                @onblur="OnStoreDateBlur" />
@@ -53,6 +53,7 @@
 }
 
 @code {
+    // todo: move these to settings
     private static readonly string[] Locations = new[]
     {
         "Compartment 1",
@@ -69,7 +70,6 @@
             Quantity = 1
         };
 
-    // Only this property, no field
     private string BoxNumbersInput
     {
         get => boxNumbersInputBacking;
@@ -92,7 +92,6 @@
     {
         try
         {
-            // Parse box numbers from input
             var boxNumbers = BoxNumbersInput
                 .Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
                 .Select(s => int.TryParse(s, out var n) ? n : (int?)null)

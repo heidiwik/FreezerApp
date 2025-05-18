@@ -13,7 +13,7 @@ a, .btn-link {
 }
 
 .btn:focus, .btn:active:focus, .btn-link.nav-link:focus, .form-control:focus, .form-check-input:focus {
-  box-shadow: 0 0 0 0.1rem white, 0 0 0 0.25rem #258cfb;
+    box-shadow: 0 0 0 0.1rem white, 0 0 0 0.25rem #258cfb;
 }
 
 .content {
@@ -48,4 +48,30 @@ h1:focus {
 
 .darker-border-checkbox.form-check-input {
     border-color: #929292;
+}
+
+
+.form-control {
+    max-width: 500px;
+}
+
+/*.table th,
+.table td {
+    text-align: center;
+}*/
+
+.bi-icon {
+    margin-left: 4px;
+    font-size: 16px;
+    position: relative;
+    top: 3px;
+}
+
+.table > :not(caption) > * > * {
+    background-color: transparent;
+}
+
+.border-bottom-row {
+    background: #eee;
+    /*    border-bottom: 1px solid #ccc;*/
 }

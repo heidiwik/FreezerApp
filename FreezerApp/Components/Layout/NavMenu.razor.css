@@ -32,6 +32,7 @@
     margin-right: 0.75rem;
     top: -1px;
     background-size: cover;
+    margin-left: 1em;
 }
 
 .bi-house-door-fill-nav-menu {
@@ -71,10 +72,10 @@
         width: 100%;
     }
 
-.nav-item ::deep a.active {
-    background-color: rgba(255,255,255,0.37);
-    color: white;
-}
+    .nav-item ::deep a.active {
+        background-color: rgba(255,255,255,0.1);
+
+    }
 
 .nav-item ::deep .nav-link:hover {
     background-color: rgba(255,255,255,0.1);
