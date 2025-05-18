@@ -20,11 +20,14 @@
     </div>
     <div class="mb-3">
         <label>Quantity:</label>
-        <InputNumber class="form-control" @bind-Value="newItem.Quantity" />
+        <InputNumber class="form-control"
+                     @bind-Value="newItem.Quantity"
+                     disabled="@IsBoxProvided" />
     </div>
     <div class="mb-3">
-        <label>Box:</label>
-        <InputNumber class="form-control" @bind-Value="newItem.BoxId" />
+        <label>Box(es):</label>
+        <InputText class="form-control" @bind-Value="BoxNumbersInput" placeholder="e.g. 1,2,3" />
+        <div class="form-text">Enter one or more box numbers, separated by commas.</div>
     </div>
     <div class="mb-3">
         <label>Location:</label>
@@ -50,7 +53,6 @@
 }
 
 @code {
-
     private static readonly string[] Locations = new[]
     {
         "Compartment 1",
@@ -63,24 +65,81 @@
             Id = Guid.NewGuid(),
             StoreDate = DateTime.Now,
             Name = string.Empty,
-            Location = Locations[0] // Default selection
+            Location = Locations[0],
+            Quantity = 1
         };
 
+    // Only this property, no field
+    private string BoxNumbersInput
+    {
+        get => boxNumbersInputBacking;
+        set
+        {
+            boxNumbersInputBacking = value;
+            if (IsBoxProvided)
+            {
+                newItem.Quantity = 1;
+            }
+        }
+    }
+    private string boxNumbersInputBacking = string.Empty;
+
     private string? message;
+
+    private bool IsBoxProvided => !string.IsNullOrWhiteSpace(BoxNumbersInput);
 
     private async Task HandleValidSubmit()
     {
         try
         {
-            newItem.Id = Guid.NewGuid(); // Ensure unique ID
-            await TableService.AddFreezerItemAsync(newItem, Configuration, Logger);
-            message = "Item added!";
+            // Parse box numbers from input
+            var boxNumbers = BoxNumbersInput
+                .Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+                .Select(s => int.TryParse(s, out var n) ? n : (int?)null)
+                .Where(n => n.HasValue)
+                .Select(n => n.Value)
+                .Distinct()
+                .ToList();
+
+            if (boxNumbers.Count > 0)
+            {
+                // If boxes are provided, add one item per box, quantity always 1
+                foreach (var box in boxNumbers)
+                {
+                    var item = new FreezerItem
+                        {
+                            Id = Guid.NewGuid(),
+                            Name = newItem.Name,
+                            Quantity = 1,
+                            BoxId = box,
+                            Location = newItem.Location,
+                            StoreDate = newItem.StoreDate
+                        };
+                    await TableService.AddFreezerItemAsync(item, Configuration, Logger);
+                }
+            }
+            else
+            {
+                // If no box is provided, add a single item with user-defined quantity and no BoxId
+                var item = new FreezerItem
+                    {
+                        Id = Guid.NewGuid(),
+                        Name = newItem.Name,
+                        Quantity = newItem.Quantity,
+                        BoxId = null,
+                        Location = newItem.Location,
+                        StoreDate = newItem.StoreDate
+                    };
+                await TableService.AddFreezerItemAsync(item, Configuration, Logger);
+            }
+
+            message = "Item(s) added!";
             Navigation.NavigateTo("/");
         }
         catch (Exception ex)
         {
-            Logger.LogError(ex, "Error adding item");
-            message = "Error adding item.";
+            Logger.LogError(ex, "Error adding item(s)");
+            message = "Error adding item(s).";
         }
     }
 
@@ -96,7 +155,6 @@
         }
     }
 
-    // Ensure value is parsed on blur (in case user pastes or types in the field)
     private void OnStoreDateBlur(FocusEventArgs e)
     {
         storeDateString = storeDateString;

@@ -12,11 +12,11 @@
 
 <h1>Freezer app</h1>
 
-@if (freezerItems == null)
+@if (groupedItems == null)
 {
     <p>Loading...</p>
 }
-else if (freezerItems.Count == 0)
+else if (groupedItems.Count == 0)
 {
     <p>No items found.</p>
 }
@@ -27,27 +27,48 @@ else
             <tr>
                 <th>Name</th>
                 <th>Quantity</th>
-                <th>Box</th>
-                <th>Location</th>
-                <th>Stored</th>
-                <th>Delete</th>
+                <th>Boxes</th>
+                <th>Locations</th>
+                <th>Stored (Earliest)</th>
+                <th>Delete All</th>
             </tr>
         </thead>
         <tbody>
-            @foreach (var item in freezerItems)
+            @foreach (var group in groupedItems)
             {
-                <tr>
-                    <td><b>@item.Name</b></td>
-                    <td>@item.Quantity</td>
-                    <td>@item.BoxId</td>
-                    <td>@item.Location</td>
-                    <td>@item.StoreDate.ToString("dd.MM.yy H:mm")</td>
+                <tr class="@(group.TotalQuantity > 1 ? "table-group-row clickable" : "")"
+                    @onclick="() => { if (group.TotalQuantity > 1) ToggleGroup(group.Name); }"
+                    style="cursor:@(group.TotalQuantity > 1 ? "pointer" : "default")">
+                    <td><b>@group.Name</b></td>
+                    <td>@group.TotalQuantity</td>
+                    <td>@string.Join(", ", group.Boxes)</td>
+                    <td>@string.Join(", ", group.Locations)</td>
+                    <td>@group.EarliestStoreDate.ToString("dd.MM.yy H:mm")</td>
                     <td>
-                        <button class="btn btn-danger btn-sm" @onclick="async () => await DeleteItem(item.Id)">
-                            Delete
+                        <button class="btn btn-danger btn-sm" @onclick:stopPropagation="true" @onclick="() => DeleteAll(group.Name)">
+                            Delete All
                         </button>
                     </td>
                 </tr>
+                @if (expandedGroups.Contains(group.Name))
+                {
+                    var items = freezerItems!.Where(x => x.Name == group.Name).OrderBy(x => x.StoreDate).ToList();
+                    @foreach (var item in items)
+                    {
+                        <tr class="table-active">
+                            <td colspan="2"></td>
+                            <td>@(item.BoxId?.ToString() ?? "-")</td>
+                            <td>@(item.Location ?? "-")</td>
+                            <td>@item.StoreDate.ToString("dd.MM.yy H:mm")</td>
+                            <td>
+                                <button class="btn btn-danger btn-sm"
+                                        @onclick="async (e) => await DeleteSingle(item.Id)">
+                                    Delete
+                                </button>
+                            </td>
+                        </tr>
+                    }
+                   }
             }
         </tbody>
     </table>
@@ -55,18 +76,67 @@ else
 
 @code {
     private List<FreezerItem>? freezerItems;
+    private List<GroupedItem>? groupedItems;
+
+    private HashSet<string> expandedGroups = new();
+
+    private void ToggleGroup(string groupName)
+    {
+        if (!expandedGroups.Add(groupName))
+            expandedGroups.Remove(groupName);
+    }
 
     protected override async Task OnInitializedAsync()
     {
         freezerItems = await TableService.GetFreezerItemsAsync(Configuration, Logger);
+        GroupItems();
     }
 
-    private async Task DeleteItem(Guid id)
+    private void GroupItems()
+    {
+        groupedItems = freezerItems
+            ?.GroupBy(i => i.Name)
+            .Select(g => new GroupedItem
+                {
+                    Name = g.Key,
+                    TotalQuantity = g.Sum(x => x.Quantity),
+                    Boxes = g.Select(x => x.BoxId?.ToString() ?? "-").Distinct().ToList(),
+                    Locations = g.Select(x => x.Location ?? "-").Distinct().ToList(),
+                    EarliestStoreDate = g.Min(x => x.StoreDate),
+                    Ids = g.Select(x => x.Id).ToList()
+                })
+            .OrderBy(g => g.Name)
+            .ToList();
+    }
+
+    private async Task DeleteAll(string name)
+    {
+        if (freezerItems == null) return;
+        var itemsToDelete = freezerItems.Where(x => x.Name == name).ToList();
+        foreach (var item in itemsToDelete)
+        {
+            await TableService.DeleteFreezerItemAsync(item.Id, Configuration, Logger);
+        }
+        freezerItems = await TableService.GetFreezerItemsAsync(Configuration, Logger);
+        GroupItems();
+        StateHasChanged();
+    }
+
+    private async Task DeleteSingle(Guid id)
     {
         await TableService.DeleteFreezerItemAsync(id, Configuration, Logger);
-
-        // Refresh the list after deletion
         freezerItems = await TableService.GetFreezerItemsAsync(Configuration, Logger);
+        GroupItems();
         StateHasChanged();
+    }
+
+    private class GroupedItem
+    {
+        public string Name { get; set; } = string.Empty;
+        public int TotalQuantity { get; set; }
+        public List<string> Boxes { get; set; } = new();
+        public List<string> Locations { get; set; } = new();
+        public DateTime EarliestStoreDate { get; set; }
+        public List<Guid> Ids { get; set; } = new();
     }
 }
