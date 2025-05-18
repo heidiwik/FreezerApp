@@ -1,0 +1,72 @@
+﻿@page "/"
+@rendermode InteractiveServer
+
+@using FreezerApp.Models
+@using FreezerApp.Services
+
+@inject TableService TableService
+@inject IConfiguration Configuration
+@inject ILogger<Home> Logger
+
+<PageTitle>Freezer app</PageTitle>
+
+<h1>Freezer app</h1>
+
+@if (freezerItems == null)
+{
+    <p>Loading...</p>
+}
+else if (freezerItems.Count == 0)
+{
+    <p>No items found.</p>
+}
+else
+{
+    <table class="table">
+        <thead>
+            <tr>
+                <th>Name</th>
+                <th>Quantity</th>
+                <th>Box</th>
+                <th>Location</th>
+                <th>Stored</th>
+                <th>Delete</th>
+            </tr>
+        </thead>
+        <tbody>
+            @foreach (var item in freezerItems)
+            {
+                <tr>
+                    <td><b>@item.Name</b></td>
+                    <td>@item.Quantity</td>
+                    <td>@item.BoxId</td>
+                    <td>@item.Location</td>
+                    <td>@item.StoreDate.ToString("dd.MM.yy H:mm")</td>
+                    <td>
+                        <button class="btn btn-danger btn-sm" @onclick="async () => await DeleteItem(item.Id)">
+                            Delete
+                        </button>
+                    </td>
+                </tr>
+            }
+        </tbody>
+    </table>
+}
+
+@code {
+    private List<FreezerItem>? freezerItems;
+
+    protected override async Task OnInitializedAsync()
+    {
+        freezerItems = await TableService.GetFreezerItemsAsync(Configuration, Logger);
+    }
+
+    private async Task DeleteItem(Guid id)
+    {
+        await TableService.DeleteFreezerItemAsync(id, Configuration, Logger);
+
+        // Refresh the list after deletion
+        freezerItems = await TableService.GetFreezerItemsAsync(Configuration, Logger);
+        StateHasChanged();
+    }
+}
