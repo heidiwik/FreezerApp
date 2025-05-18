@@ -8,9 +8,12 @@
 @inject IConfiguration Configuration
 @inject ILogger<Home> Logger
 
-<PageTitle>Freezer app</PageTitle>
+       @inject IJSRuntime JSRuntime
 
-<h1>Freezer app</h1>
+
+<PageTitle>Freezer app</PageTitle>
+@* 
+<h1>Freezer app</h1> *@
 
 @if (groupedItems == null)
 {
@@ -37,36 +40,80 @@ else
             @foreach (var group in groupedItems)
             {
                 bool canExpand = group.Ids.Count > 1 && group.Boxes.Any(x => !string.IsNullOrWhiteSpace(x));
+
+                var itemId = group.Ids.FirstOrDefault();
+
+                bool isEditing = (!canExpand && editingItemId == itemId);
+
                 <tr class="@(canExpand ? "table-group-row clickable" : "") @(expandedGroups.Contains(group.Name) ? "table-active border-bottom-row" : "")"
-                    @onclick="() => { if (canExpand) ToggleGroup(group.Name); }"
+                    @onclick="() => { if (canExpand) ToggleGroup(group.Name); else StartEditing(group); }"
                     style=@($"cursor:{(canExpand ? "pointer" : "default")}")>
                     <td>
-                        <b>@group.Name </b>
-                        @if (canExpand)
+                        @if (isEditing)
                         {
-                            <span> <i class="bi @(expandedGroups.Contains(group.Name) ? "bi-caret-up-fill" : "bi-caret-down-fill") bi-icon"></i></span>
+                            <InputText class="form-control" @bind-Value="editingItem.Name" @onblur="SaveEditingItem" />
+                        }
+                        else
+                        {
+                            <b>@group.Name</b>
+                            @if (canExpand)
+                            {
+                                <span><i class="bi @(expandedGroups.Contains(group.Name) ? "bi-caret-up-fill" : "bi-caret-down-fill") bi-icon"></i></span>
+                            }
                         }
                     </td>
-                    <td>@group.TotalQuantity</td>
                     <td>
-                        @foreach (var box in group.Boxes)
+                        @if (isEditing && group.Boxes.Count == 0)
                         {
-                            <span class="badge rounded-pill bg-primary">@box</span>
+                            <InputNumber class="form-control" @bind-Value="editingItem.Quantity" @onblur="SaveEditingItem" />
+                        }
+                        else
+                        {
+                            @group.TotalQuantity
                         }
                     </td>
                     <td>
-                        @foreach (var compartment in group.Locations)
+                        @if (isEditing)
                         {
-                            <span class="badge bg-success rounded-pill">@compartment</span>
+                            <InputText class="form-control" @bind-Value="boxInput" @onblur="SaveEditingItem" />
+                        }
+                        else
+                        {
+                            @foreach (var box in group.Boxes)
+                            {
+                                <span class="badge rounded-pill bg-primary">@box</span>
+                            }
                         }
                     </td>
-                    <td>@group.EarliestStoreDate.ToString("dd.MM.yy H:mm")</td>
                     <td>
-                        @if (!canExpand)
+                        @if (isEditing)
+                        {
+                            <InputText class="form-control" @bind-Value="editingItem.Location" @onblur="SaveEditingItem" />
+                        }
+                        else
+                        {
+                            @foreach (var compartment in group.Locations)
+                            {
+                                <span class="badge bg-success rounded-pill">@compartment</span>
+                            }
+                        }
+                    </td>
+                    <td>
+                        @if (isEditing)
+                        {
+                            <InputText class="form-control" @bind-Value="storeDateInput" @onblur="SaveEditingItem" />
+                        }
+                        else
+                        {
+                            @group.EarliestStoreDate.ToString("dd.MM.yy H:mm")
+                        }
+                    </td>
+                    <td>
+                        @if (isEditing && !canExpand)
                         {
                             <button class="btn btn-danger btn-sm"
                                     @onclick:stopPropagation="true"
-                                    @onclick="() => ShowConfirm(GetDeleteMessage(group.Name), async () => await DeleteSingle(group.Ids.FirstOrDefault()))">
+                                    @onclick="() => ShowConfirm(GetDeleteMessage(group.Name), async () => await DeleteSingle(itemId))">
                                 @(group.TotalQuantity > 1 ? "Delete one" : "Delete")
                             </button>
                         }
@@ -99,7 +146,8 @@ else
     </table>
 }
 
-@if (showConfirm){
+@if (showConfirm)
+{
     <div class="modal-backdrop fade show"></div>
     <div class="modal d-block" tabindex="-1">
         <div class="modal-dialog">
@@ -225,19 +273,61 @@ else
         }
     }
 
-    // unused for now
-    // private async Task DeleteAll(string name)
-    // {
-    //     if (freezerItems == null) return;
-    //     var itemsToDelete = freezerItems.Where(x => x.Name == name).ToList();
-    //     foreach (var item in itemsToDelete)
-    //     {
-    //         await TableService.DeleteFreezerItemAsync(item.Id, Configuration, Logger);
-    //     }
-    //     freezerItems = await TableService.GetFreezerItemsAsync(Configuration, Logger);
-    //     GroupItems();
-    //     StateHasChanged();
-    // }
+    private Guid? editingItemId = null;
+    private FreezerItem? editingItem = null;
+    private string boxInput = string.Empty;
+    private string storeDateInput = string.Empty;
+
+    private void StartEditing(GroupedItem group)
+    {
+        // Only allow editing if not in edit mode and row is not expandable.
+        if (editingItemId != null) return;
+        var id = group.Ids.FirstOrDefault();
+        var item = freezerItems?.FirstOrDefault(x => x.Id == id);
+        if (item != null)
+        {
+            editingItemId = id;
+            // Create a clone of the item for editing so that changes are not applied immediately.
+            editingItem = new FreezerItem
+                {
+                    Id = item.Id,
+                    Name = item.Name,
+                    Quantity = item.Quantity,
+                    BoxId = item.BoxId,
+                    Location = item.Location,
+                    StoreDate = item.StoreDate
+                };
+            boxInput = editingItem.BoxId?.ToString() ?? "";
+            storeDateInput = editingItem.StoreDate.ToString("d.M.yyyy HH:mm");
+            StateHasChanged();
+        }
+    }
+
+    private async Task SaveEditingItem()
+    {
+        if (editingItem == null) return;
+
+        if (int.TryParse(boxInput, out int box))
+            editingItem.BoxId = box;
+        else
+            editingItem.BoxId = null;
+
+        // Parse the store date.
+        if (DateTime.TryParseExact(storeDateInput, "d.M.yyyy HH:mm", null, System.Globalization.DateTimeStyles.None, out var dt))
+            editingItem.StoreDate = dt;
+
+        await TableService.UpdateFreezerItemAsync(editingItem, Configuration, Logger);
+        freezerItems = await TableService.GetFreezerItemsAsync(Configuration, Logger);
+        GroupItems();
+        editingItemId = null;
+        editingItem = null;
+
+        // Blur the active element to force focus out
+        await JSRuntime.InvokeVoidAsync("document.activeElement.blur");
+
+        StateHasChanged();
+    }
+
 
 
     private class GroupedItem

@@ -94,26 +94,36 @@ namespace FreezerApp.Services
 
         public static async Task UpdateFreezerItemAsync(FreezerItem item, IConfiguration config, ILogger log)
         {
-            var tableClient = GetTableStorageClient(config, log);
-            if (item == null)
+            if (item != null)
             {
-                throw new ArgumentNullException(nameof(item));
+                var tableClient = GetTableStorageClient(config, log);
+
+                try
+                {
+                    // Retrieve the existing entity
+                    var existingEntityResponse = await tableClient.GetEntityAsync<FreezerItemEntity>("items", item.Id.ToString());
+                    var existingEntity = existingEntityResponse.Value;
+
+                    // Update the properties
+                    existingEntity.BoxId = item.BoxId;
+                    existingEntity.Name = item.Name;
+                    existingEntity.Quantity = item.Quantity;
+                    existingEntity.Location = item.Location;
+                    existingEntity.StoreDate = item.StoreDate.Kind == DateTimeKind.Utc
+                     ? item.StoreDate
+                     : DateTime.SpecifyKind(item.StoreDate.ToUniversalTime(), DateTimeKind.Utc);
+
+                    // Always use wildcard ETag to bypass concurrency
+                    await tableClient.UpdateEntityAsync(existingEntity, ETag.All, TableUpdateMode.Replace);
+                }
+                catch (Exception ex)
+                {
+                    log.LogError(ex, "Error updating entity {Id}", item.Id);
+                    throw;
+                }
             }
-
-            // Retrieve the existing entity to get its valid ETag
-            var existingEntityResponse = await tableClient.GetEntityAsync<FreezerItemEntity>("items", item.Id.ToString());
-            var existingEntity = existingEntityResponse.Value;
-
-            // Update the properties
-            existingEntity.BoxId = item.BoxId;
-            existingEntity.Name = item.Name;
-            existingEntity.Quantity = item.Quantity;
-            existingEntity.Location = item.Location;
-            existingEntity.StoreDate = item.StoreDate;
-
-            // Use the ETag from the retrieved entity
-            await tableClient.UpdateEntityAsync(existingEntity, existingEntity.ETag);
         }
+
 
         public static async Task DeleteFreezerItemAsync(Guid id, IConfiguration config, ILogger log)
         {
