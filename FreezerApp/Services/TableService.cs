@@ -5,9 +5,10 @@ using System.Linq;
 using System.Text;
 using System.Threading.Tasks;
 using Azure.Data.Tables;
-using Microsoft.Extensions.Configuration;
-using Microsoft.Extensions.Logging;
 using FreezerApp.Models;
+using Azure.Core;
+using Azure.Identity;
+using System.Diagnostics;
 
 namespace FreezerApp.Services
 {
@@ -17,7 +18,20 @@ namespace FreezerApp.Services
         {
             try
             {
-                var client = new TableServiceClient(config["Storage:ConnectionString"]);
+                //var client = new TableServiceClient(config["Storage:ConnectionString"]);
+
+                TableServiceClient? client;
+
+                if (Debugger.IsAttached)
+                {
+                    var connectionString = config["Storage:ConnectionString"] ?? throw new Exception("StorageAccountConnectionString is not specified in app configuration.");
+                    client = new TableServiceClient(connectionString);
+                }
+                else
+                {
+                    var storageAccountUri = config["Storage:AccountUri"] ?? throw new Exception($"StorageAccountUri is not specified in app configuration.");
+                    client = new TableServiceClient(new Uri(storageAccountUri), new DefaultAzureCredential());
+                }
 
                 var tableName = "FreezerItems";
 

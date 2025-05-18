@@ -5,6 +5,7 @@
 
 appsettings.json
 appsettings.Development.json
+FreezerApp/Properties/*
 
 # User-specific files
 *.rsuser
